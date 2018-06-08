@@ -74,7 +74,6 @@ char hourText[10];
 #include "Timer.h"
 
 TimerClass screenRefreshTimer(3, 0);
-//TimerClass blePollTimer(4, 0);
 
 void setup() {
   // custom services and characteristics can be added as well
@@ -195,14 +194,6 @@ void loop() {
   
 }
 
-//void blePoll()
-//{
-//  BLESerial.poll();
-//  loopback();
-//
-//  blePollTimer.attachInterrupt(&blePoll, 200000);
-//}
-
 void refreshScreen(int orientation = 1) {
 
     display.setRotation(orientation);
@@ -214,7 +205,7 @@ void refreshScreen(int orientation = 1) {
 
     rtc.getDate();
     rtc.getTime();
-    sprintf(hourText,"%d:%d:%d\n", rtc.time.hour, rtc.time.minute, rtc.time.second);
+    sprintf(hourText,"%02d:%02d:%02d\n", rtc.time.hour, rtc.time.minute, rtc.time.second);
     
     display.println(hourText);
 
@@ -225,20 +216,13 @@ void refreshScreen(int orientation = 1) {
     display.setCursor(10, 75);
     display.println("2346 steps");
     
-   
-//    display.setTextColor(WHITE, BLACK); // inverted text
-//    display.println(3.141592);
-//    display.setTextSize(2);
-//    display.setTextColor(BLACK);
-//    display.print("0x"); display.println(0xDEADBEEF, HEX);
-//    // Screen must be refreshed at least once per second
+    // Screen must be refreshed at least once per second
 
     display.refresh();
 }
 
 void timerHandler()
 {
-  //refreshScreen(1);
   bRefreshScreen = true;
   
   screenRefreshTimer.attachInterrupt(&timerHandler, 1000000); 
