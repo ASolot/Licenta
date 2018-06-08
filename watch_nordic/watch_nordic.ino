@@ -51,6 +51,8 @@ Adafruit_SharpMem display(SHARP_SCK, SHARP_MOSI, SHARP_SS, 96, 96);
 
 int minorHalfSize; // 1/2 of lesser of display width or height
 
+bool bRefreshScreen = false;
+
 // RTC
 
 #include "RTCInt.h"
@@ -68,10 +70,15 @@ int year;
 // text displayed
 char hourText[10];
 
+// timers 
+#include "Timer.h"
+
+TimerClass screenRefreshTimer(3, 0);
+//TimerClass blePollTimer(4, 0);
 
 void setup() {
   // custom services and characteristics can be added as well
-  BLESerial.setLocalName("UART");
+  BLESerial.setLocalName("AS_Watch");
 
   Serial.begin(115200);
   BLESerial.begin();
@@ -165,11 +172,14 @@ void setup() {
   rtc.setYear(year);
 
   sprintf(hourText, "%s", "18:30:25");
-  
+
+  screenRefreshTimer.attachInterrupt(&timerHandler, 1000000);
+  //blePollTimer.attachInterrupt(&blePoll, 200000);
 }
 
-void loop() {
+void refreshScreen(int orientation);
 
+void loop() {
   
   BLESerial.poll();
 
@@ -177,14 +187,23 @@ void loop() {
   loopback();
   //spam();
 
-  refreshScreen(1);
+  if(bRefreshScreen)
+  {
+    bRefreshScreen = false;
+    refreshScreen(1);
+  }
   
-
-
-    
 }
 
-void refreshScreen(int orientation) {
+//void blePoll()
+//{
+//  BLESerial.poll();
+//  loopback();
+//
+//  blePollTimer.attachInterrupt(&blePoll, 200000);
+//}
+
+void refreshScreen(int orientation = 1) {
 
     display.setRotation(orientation);
     display.clearDisplay();
@@ -201,8 +220,8 @@ void refreshScreen(int orientation) {
 
     display.setTextSize(1);
 
-    display.setCursor(30, 60);
-    display.println("VOC: 5");
+    display.setCursor(25, 60);
+    display.println("IAQ: 50");
     display.setCursor(10, 75);
     display.println("2346 steps");
     
@@ -215,9 +234,14 @@ void refreshScreen(int orientation) {
 //    // Screen must be refreshed at least once per second
 
     display.refresh();
-    delay(500);
-    //timer.attachInterrupt(&refreshScreen, 1000000);
-    
+}
+
+void timerHandler()
+{
+  //refreshScreen(1);
+  bRefreshScreen = true;
+  
+  screenRefreshTimer.attachInterrupt(&timerHandler, 1000000); 
 }
 
 // forward received from Serial to BLESerial and vice versa
@@ -249,6 +273,50 @@ void loopback() {
       if(strcmp(buffer, "down") == 0)
       {
         refreshScreen(2);
+      }
+      if(strstr(buffer, "synchrs") != NULL)
+      {
+        int syncHours = atoi(buffer+7);
+        if(syncHours <= 23 and syncHours >= 0)
+        {
+          rtc.setHour(syncHours,0);
+        }
+      }
+      
+      if(strstr(buffer, "syncmin") != NULL)
+      {
+        int syncMinutes = atoi(buffer+7);
+        if(syncMinutes <= 59 and syncMinutes >= 0)
+        {
+          rtc.setMinute(syncMinutes);
+        }
+      }
+
+      if(strstr(buffer, "syncsec") != NULL)
+      {
+        int syncSeconds = atoi(buffer+7);
+        if(syncSeconds <= 59 and syncSeconds >= 0)
+        {
+          rtc.setSecond(syncSeconds);
+        }
+      }
+      
+      if(strstr(buffer, "syncday") != NULL)
+      {
+        int syncDay = atoi(buffer+7);
+        if(syncDay <= 31 and syncDay >= 0)
+        {
+          rtc.setDay(syncDay);
+        }
+      }
+
+      if(strstr(buffer, "syncmon") != NULL)
+      {
+        int syncMonth = atoi(buffer+7);
+        if(syncMonth <= 12 and syncMonth >= 0)
+        {
+          rtc.setMonth(syncMonth);
+        }
       }
   }
 }

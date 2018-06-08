@@ -1,11 +1,13 @@
 #ifndef _TIMER_H_
 #define _TIMER_H_
 
+#include "nrf_timer.h"
+
 typedef void (*funcPtr_t)();
 
 class TimerClass {
     public:
-        TimerClass(int timer = 1, int channel = 0);
+        TimerClass(int timer = 3, int channel = 0);
         void attachInterrupt(funcPtr_t callback, int microsec);
         inline void detachInterrupt();
     private:

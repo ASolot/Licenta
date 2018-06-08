@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include "nrf_timer.h"
+
 #include "Timer.h"
 
 static void defaultFunc() {};
