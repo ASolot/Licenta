@@ -75,13 +75,194 @@ char hourText[10];
 
 TimerClass screenRefreshTimer(3, 0);
 
-void setup() {
+// I2C
+#include <Wire.h>
+#include <SPI.h>
+
+//// Accelerometer - adafruit lib
+//#include <Adafruit_LSM9DS0.h>
+//#include <Adafruit_Sensor.h>
+//
+//Adafruit_LSM9DS0 lsm = Adafruit_LSM9DS0(29);
+
+// Accelerometer - SparkFun
+#include <SFE_LSM9DS0.h>
+
+///////////////////////
+// Example I2C Setup //
+///////////////////////
+// Comment out this section if you're using SPI
+// SDO_XM and SDO_G are both grounded, so our addresses are:
+#define LSM9DS0_XM  0x1D // Would be 0x1E if SDO_XM is LOW
+#define LSM9DS0_G   0x6B // Would be 0x6A if SDO_G is LOW
+// Create an instance of the LSM9DS0 library called `dof` the
+// parameters for this constructor are:
+// [SPI or I2C Mode declaration],[gyro I2C address],[xm I2C add.]
+LSM9DS0 dof(MODE_I2C, LSM9DS0_G, LSM9DS0_XM);
+
+#define PRINT_CALCULATED
+#define PRINT_SPEED 500 // 500 ms between prints
+
+#define PIN_BUTTON1 23
+#define PIN_BUTTON2 22
+
+const unsigned long LONG_DELTA = 1000ul;               // hold seconds for a long press
+const unsigned long DEBOUNCE_DELTA = 30ul;
+
+#define STATE_NORMAL 0
+#define STATE_SHORT 1
+#define STATE_LONG 2
+
+volatile int  resultButton1 = 0;
+volatile int  resultButton2 = 0;
+
+int menu = 0;
+int menu2 = 0;
+
+int err = 0;
+
+//TwoWire bus = TwoWire(NRF_TWIM0, NRF_TWIS0, (IRQn_Type)3, 9, 10);
+//TwoWire Wire = TwoWire(9,10);
+
+void setupI2C(void)
+{
+  //Wire.TwoWire(NRF_TWIM0, NRF_TWIS0, (IRQn_Type)3, PIN_WIRE_SDA, PIN_WIRE_SCL);
+  //Wire.begin();
+}
+
+void setupButtons(void)
+{
+  pinMode(PIN_BUTTON1, INPUT);
+  attachInterrupt(digitalPinToInterrupt(PIN_BUTTON1), checkButton1, CHANGE);
+
+  pinMode(PIN_BUTTON2, INPUT);
+  attachInterrupt(digitalPinToInterrupt(PIN_BUTTON2), checkButton2, CHANGE);
+}
+
+void setupAccel(void)
+{
+  uint16_t status = dof.begin();
+}
+
+void printAccel()
+{
+  // To read from the accelerometer, you must first call the
+  // readAccel() function. When this exits, it'll update the
+  // ax, ay, and az variables with the most current data.
+  dof.readAccel();
+  
+  // Now we can use the ax, ay, and az variables as we please.
+  // Either print them as raw ADC values, or calculated in g's.
+  Serial.print("A: ");
+#ifdef PRINT_CALCULATED
+  // If you want to print calculated values, you can use the
+  // calcAccel helper function to convert a raw ADC value to
+  // g's. Give the function the value that you want to convert.
+  Serial.print(dof.calcAccel(dof.ax), 2);
+  Serial.print(", ");
+  Serial.print(dof.calcAccel(dof.ay), 2);
+  Serial.print(", ");
+  Serial.println(dof.calcAccel(dof.az), 2);
+#elif defined PRINT_RAW 
+  Serial.print(dof.ax);
+  Serial.print(", ");
+  Serial.print(dof.ay);
+  Serial.print(", ");
+  Serial.println(dof.az);
+#endif
+
+}
+
+void setupBLE(void)
+{
   // custom services and characteristics can be added as well
   BLESerial.setLocalName("AS_Watch");
 
   Serial.begin(115200);
   BLESerial.begin();
+}
 
+void setupAccelerometer(void)
+{
+//  if(!lsm.begin())
+//  {
+//    /* There was a problem detecting the LSM9DS0 ... check your connections */
+//    //Serial.print(F("Ooops, no LSM9DS0 detected ... Check your wiring or I2C ADDR!"));
+//    err = 1;
+//    return;
+//  }
+  //Serial.println(F("Found LSM9DS0 9DOF"));
+  
+  
+//  /* Setup the sensor gain and integration time */
+//  // 1.) Set the accelerometer range
+//  lsm.setupAccel(lsm.LSM9DS0_ACCELRANGE_2G);
+//  //lsm.setupAccel(lsm.LSM9DS0_ACCELRANGE_4G);
+//  //lsm.setupAccel(lsm.LSM9DS0_ACCELRANGE_6G);
+//  //lsm.setupAccel(lsm.LSM9DS0_ACCELRANGE_8G);
+//  //lsm.setupAccel(lsm.LSM9DS0_ACCELRANGE_16G);
+//  
+//  // 2.) Set the magnetometer sensitivity
+//  lsm.setupMag(lsm.LSM9DS0_MAGGAIN_2GAUSS);
+//  //lsm.setupMag(lsm.LSM9DS0_MAGGAIN_4GAUSS);
+//  //lsm.setupMag(lsm.LSM9DS0_MAGGAIN_8GAUSS);
+//  //lsm.setupMag(lsm.LSM9DS0_MAGGAIN_12GAUSS);
+//
+//  // 3.) Setup the gyroscope
+//  lsm.setupGyro(lsm.LSM9DS0_GYROSCALE_245DPS);
+//  //lsm.setupGyro(lsm.LSM9DS0_GYROSCALE_500DPS);
+//  //lsm.setupGyro(lsm.LSM9DS0_GYROSCALE_2000DPS);
+//
+//  lsm.read();
+//  Serial.print("Accel X: "); Serial.print((int)lsm.accelData.x); Serial.print(" ");
+//  Serial.print("Y: "); Serial.print((int)lsm.accelData.y);       Serial.print(" ");
+//  Serial.print("Z: "); Serial.println((int)lsm.accelData.z);     Serial.print(" ");
+//  Serial.print("Mag X: "); Serial.print((int)lsm.magData.x);     Serial.print(" ");
+//  Serial.print("Y: "); Serial.print((int)lsm.magData.y);         Serial.print(" ");
+//  Serial.print("Z: "); Serial.println((int)lsm.magData.z);       Serial.print(" ");
+//  Serial.print("Gyro X: "); Serial.print((int)lsm.gyroData.x);   Serial.print(" ");
+//  Serial.print("Y: "); Serial.print((int)lsm.gyroData.y);        Serial.print(" ");
+//  Serial.print("Z: "); Serial.println((int)lsm.gyroData.z);      Serial.println(" ");
+//  Serial.print("Temp: "); Serial.print((int)lsm.temperature); 
+}
+
+void setupPollutionSensor(void)
+{
+
+}
+
+void setupVibe(void)
+{
+ 
+}
+
+void setupRTC(void)
+{
+  // init rtc
+
+  hours = 18;
+  minutes = 30;
+  seconds = 0;
+
+  day = 6;
+  month = 6;
+  year = 18;
+  
+  rtc.begin(TIME_H24);
+
+  rtc.setHour(hours,0);
+  rtc.setMinute(minutes);
+  rtc.setSecond(seconds);
+
+  rtc.setDay(day);
+  rtc.setMonth(month);
+  rtc.setYear(year);
+
+  screenRefreshTimer.attachInterrupt(&timerHandler, 1000000);
+}
+
+void setupDisplay(void)
+{
   pinMode(SHARP_DISP, OUTPUT);
   digitalWrite(SHARP_DISP, HIGH);
 
@@ -149,36 +330,31 @@ void setup() {
 //    display.refresh();
 //    delay(500);
 //  }
+}
 
-  // init rtc
+void setup() 
+{
 
-  hours = 18;
-  minutes = 30;
-  seconds = 0;
-
-  day = 6;
-  month = 6;
-  year = 18;
+  setupBLE();
+  //setupI2C();
+  setupRTC();
+  setupButtons();
   
-  rtc.begin(TIME_H24);
+  setupDisplay();
+  
+  
+  //setupAccelerometer();
+  //setupAccel();
+  //setupPollutionSensor();
 
-  rtc.setHour(hours,0);
-  rtc.setMinute(minutes);
-  rtc.setSecond(seconds);
+  
 
-  rtc.setDay(day);
-  rtc.setMonth(month);
-  rtc.setYear(year);
-
-  sprintf(hourText, "%s", "18:30:25");
-
-  screenRefreshTimer.attachInterrupt(&timerHandler, 1000000);
-  //blePollTimer.attachInterrupt(&blePoll, 200000);
 }
 
 void refreshScreen(int orientation);
 
-void loop() {
+void loop() 
+{
   
   BLESerial.poll();
 
@@ -194,13 +370,60 @@ void loop() {
   
 }
 
-void refreshScreen(int orientation = 1) {
+void refreshScreen(int orientation = 1) 
+{
 
     display.setRotation(orientation);
     display.clearDisplay();
     // text display tests
-    display.setTextSize(2);
+    
     display.setTextColor(BLACK);
+
+    display.setTextSize(1);
+
+    //lsm.read();
+//    display.setCursor(0,0);
+//    display.print(dof.calcGyro(dof.ax), 2);
+//    display.print(" ");
+//    display.print(dof.calcGyro(dof.ay), 2);
+//    display.print(" ");
+//    display.print(dof.calcGyro(dof.az), 2);
+//    display.print(" ");
+//    display.print(err);
+
+    if(resultButton1 == STATE_LONG)
+    {
+      resultButton1 = STATE_NORMAL;
+      menu = menu ^ 1;
+    }
+    if(resultButton1 == STATE_SHORT)
+    {
+      resultButton1 = STATE_NORMAL;
+      display.println("SHORT");
+    }
+
+    if(resultButton2 == STATE_LONG)
+    {
+      resultButton2 = STATE_NORMAL;
+      menu2 = menu2 ^ 1;
+    }
+    if(resultButton2 == STATE_SHORT)
+    {
+      resultButton2 = STATE_NORMAL;
+      display.println("SHORT2");
+    }
+    
+
+    if(menu)
+    {
+      display.println("MENU");
+    }
+    if(menu2)
+    {
+      display.println("MENU2");
+    }
+
+    display.setTextSize(2);
     display.setCursor(0,35);
 
     rtc.getDate();
@@ -221,16 +444,116 @@ void refreshScreen(int orientation = 1) {
     display.refresh();
 }
 
-void timerHandler()
+void drawError(char* errorMsg)
+{
+  display.setRotation(1);
+
+  display.clearDisplay();
+    // text display tests
+  display.setTextSize(2);
+  display.setTextColor(BLACK);
+  display.setCursor(0,0);
+
+  display.println(errorMsg);
+  
+}
+
+void timerHandler(void)
 {
   bRefreshScreen = true;
   
   screenRefreshTimer.attachInterrupt(&timerHandler, 1000000); 
 }
 
+void checkButton1(void)
+{
+  
+  static int lastButton1Status = HIGH;                                   // HIGH indicates the button is NOT pressed
+  int button1Status = digitalRead(PIN_BUTTON1);
+  boolean Transition = false;
+  boolean Released = true;
+  boolean timeoutShort = false;
+  boolean timeoutLong = false;
+
+  static unsigned long longTime1 = 0ul;
+  static unsigned long shortTime1 = 0ul;
+
+  timeoutShort = (millis() > shortTime1);
+  timeoutLong = (millis() > longTime1);
+
+  if (button1Status != lastButton1Status) 
+  {                         
+    shortTime1 = millis() + DEBOUNCE_DELTA;
+    longTime1 = millis() + LONG_DELTA;
+  }
+
+  Transition = (button1Status != lastButton1Status);        // has the button changed state
+  Released = (Transition && (button1Status == HIGH));       // for input pullup circuit
+
+  lastButton1Status = button1Status;
+
+  if ( ! Transition) 
+  {                                                                //without a transition, there's no change in input
+       // if there has not been a transition, don't change the previous result
+       resultButton1 =  STATE_NORMAL | resultButton1;
+       return;
+  }
+
+  if (timeoutLong && Released) {                                      // long timeout has occurred and the button was just released
+       resultButton1 = STATE_LONG | resultButton1;       // ensure the button result reflects a long press
+  } else if (timeoutShort && Released) {                          // short timeout has occurred (and not long timeout) and button was just released
+      resultButton1 = STATE_SHORT | resultButton1;     // ensure the button result reflects a short press
+  } else {                                                                                  // else there is no change in status, return the normal state
+      resultButton1 = STATE_NORMAL | resultButton1; // with no change in status, ensure no change in button status
+  }
+}
+
+void checkButton2(void)
+{
+  static int lastButton2Status = HIGH;                                   // HIGH indicates the button is NOT pressed
+  int button2Status = digitalRead(PIN_BUTTON2);
+  boolean Transition = false;
+  boolean Released = true;
+  boolean timeoutShort = false;
+  boolean timeoutLong = false;
+
+  static unsigned long longTime2 = 0ul;
+  static unsigned long shortTime2 = 0ul;
+
+  timeoutShort = (millis() > shortTime2);
+  timeoutLong = (millis() > longTime2);
+
+  if (button2Status != lastButton2Status) 
+  {                         
+    shortTime2 = millis() + DEBOUNCE_DELTA;
+    longTime2 = millis() + LONG_DELTA;
+  }
+
+  Transition = (button2Status != lastButton2Status);        // has the button changed state
+  Released = (Transition && (button2Status == HIGH));       // for input pullup circuit
+
+  lastButton2Status = button2Status;
+
+  if ( ! Transition) 
+  {                                                                //without a transition, there's no change in input
+       // if there has not been a transition, don't change the previous result
+       resultButton2 =  STATE_NORMAL | resultButton2;
+       return;
+  }
+
+  if (timeoutLong && Released) {                                      // long timeout has occurred and the button was just released
+       resultButton2 = STATE_LONG | resultButton2;       // ensure the button result reflects a long press
+  } else if (timeoutShort && Released) {                          // short timeout has occurred (and not long timeout) and button was just released
+      resultButton2 = STATE_SHORT | resultButton2;     // ensure the button result reflects a short press
+  } else {                                                                                  // else there is no change in status, return the normal state
+      resultButton2 = STATE_NORMAL | resultButton2; // with no change in status, ensure no change in button status
+  }
+}
 // forward received from Serial to BLESerial and vice versa
-void forward() {
-  if (BLESerial && Serial) {
+void forward(void) 
+{
+  if (BLESerial && Serial) 
+  {
     int byte;
     while ((byte = BLESerial.read()) > 0) Serial.write((char)byte);
     while ((byte = Serial.read()) > 0) BLESerial.write((char)byte);
@@ -238,8 +561,10 @@ void forward() {
 }
 
 // echo all received data back
-void loopback() {
-  if (BLESerial) {
+void loopback(void) 
+{
+  if (BLESerial) 
+  {
     char buffer[30];
     int k = 0;
     int byte;
@@ -306,69 +631,84 @@ void loopback() {
 }
 
 // periodically sent time stamps
-void spam() {
-  if (BLESerial) {
+void spam(void) 
+{
+  if (BLESerial) 
+  {
     BLESerial.print(millis());
     BLESerial.println(" tick-tacks!");
     delay(1000);
   }
 }
 
-void testdrawline() {
-  for (int i=0; i<display.width(); i+=4) {
+void testdrawline(void) 
+{
+  for (int i=0; i<display.width(); i+=4) 
+  {
     display.drawLine(0, 0, i, display.height()-1, BLACK);
     display.refresh();
   }
-  for (int i=0; i<display.height(); i+=4) {
+  for (int i=0; i<display.height(); i+=4) 
+  {
     display.drawLine(0, 0, display.width()-1, i, BLACK);
     display.refresh();
   }
   delay(250);
 
   display.clearDisplay();
-  for (int i=0; i<display.width(); i+=4) {
+  for (int i=0; i<display.width(); i+=4) 
+  {
     display.drawLine(0, display.height()-1, i, 0, BLACK);
     display.refresh();
   }
-  for (int i=display.height()-1; i>=0; i-=4) {
+  for (int i=display.height()-1; i>=0; i-=4) 
+  {
     display.drawLine(0, display.height()-1, display.width()-1, i, BLACK);
     display.refresh();
   }
   delay(250);
 
   display.clearDisplay();
-  for (int i=display.width()-1; i>=0; i-=4) {
+  for (int i=display.width()-1; i>=0; i-=4) 
+  {
     display.drawLine(display.width()-1, display.height()-1, i, 0, BLACK);
     display.refresh();
   }
-  for (int i=display.height()-1; i>=0; i-=4) {
+  for (int i=display.height()-1; i>=0; i-=4) 
+  {
     display.drawLine(display.width()-1, display.height()-1, 0, i, BLACK);
     display.refresh();
   }
   delay(250);
 
   display.clearDisplay();
-  for (int i=0; i<display.height(); i+=4) {
+  for (int i=0; i<display.height(); i+=4) 
+  {
     display.drawLine(display.width()-1, 0, 0, i, BLACK);
     display.refresh();
   }
-  for (int i=0; i<display.width(); i+=4) {
+  for (int i=0; i<display.width(); i+=4) 
+  {
     display.drawLine(display.width()-1, 0, i, display.height()-1, BLACK);
     display.refresh();
   }
   delay(250);
 }
 
-void testdrawrect(void) {
-  for (int i=0; i<minorHalfSize; i+=2) {
+void testdrawrect(void) 
+{
+  for (int i=0; i<minorHalfSize; i+=2) 
+  {
     display.drawRect(i, i, display.width()-2*i, display.height()-2*i, BLACK);
     display.refresh();
   }
 }
 
-void testfillrect(void) {
+void testfillrect(void) 
+{
   uint8_t color = BLACK;
-  for (int i=0; i<minorHalfSize; i+=3) {
+  for (int i=0; i<minorHalfSize; i+=3) 
+  {
     // alternate colors
     display.fillRect(i, i, display.width()-i*2, display.height()-i*2, color&1);
     display.refresh();
@@ -376,24 +716,30 @@ void testfillrect(void) {
   }
 }
 
-void testdrawroundrect(void) {
-  for (int i=0; i<minorHalfSize/2; i+=2) {
+void testdrawroundrect(void) 
+{
+  for (int i=0; i<minorHalfSize/2; i+=2) 
+  {
     display.drawRoundRect(i, i, display.width()-2*i, display.height()-2*i, minorHalfSize/2, BLACK);
     display.refresh();
   }
 }
 
-void testfillroundrect(void) {
+void testfillroundrect(void) 
+{
   uint8_t color = BLACK;
-  for (int i=0; i<minorHalfSize/2; i+=2) {
+  for (int i=0; i<minorHalfSize/2; i+=2) 
+  {
     display.fillRoundRect(i, i, display.width()-2*i, display.height()-2*i, minorHalfSize/2, color&1);
     display.refresh();
     color++;
   }
 }
 
-void testdrawtriangle(void) {
-  for (int i=0; i<minorHalfSize; i+=5) {
+void testdrawtriangle(void) 
+{
+  for (int i=0; i<minorHalfSize; i+=5) 
+  {
     display.drawTriangle(display.width()/2, display.height()/2-i,
                      display.width()/2-i, display.height()/2+i,
                      display.width()/2+i, display.height()/2+i, BLACK);
@@ -401,9 +747,11 @@ void testdrawtriangle(void) {
   }
 }
 
-void testfilltriangle(void) {
+void testfilltriangle(void) 
+{
   uint8_t color = BLACK;
-  for (int i=minorHalfSize; i>0; i-=5) {
+  for (int i=minorHalfSize; i>0; i-=5)
+  {
     display.fillTriangle(display.width()/2  , display.height()/2-i,
                          display.width()/2-i, display.height()/2+i,
                          display.width()/2+i, display.height()/2+i, color & 1);
@@ -412,13 +760,15 @@ void testfilltriangle(void) {
   }
 }
 
-void testdrawchar(void) {
+void testdrawchar(void) 
+{
   display.setTextSize(1);
   display.setTextColor(BLACK);
   display.setCursor(0,0);
   display.cp437(true);
 
-  for (int i=0; i < 256; i++) {
+  for (int i=0; i < 256; i++) 
+  {
     if (i == '\n') continue;
     display.write(i);
   }
