@@ -106,7 +106,7 @@ LSM9DS0 dof(MODE_I2C, LSM9DS0_G, LSM9DS0_XM);
 #define PIN_BUTTON1 23
 #define PIN_BUTTON2 22
 
-const unsigned long LONG_DELTA = 1000ul;               // hold seconds for a long press
+const unsigned long LONG_DELTA = 500ul;               // hold seconds for a long press
 const unsigned long DEBOUNCE_DELTA = 30ul;
 
 #define STATE_NORMAL 0
@@ -116,13 +116,29 @@ const unsigned long DEBOUNCE_DELTA = 30ul;
 volatile int  resultButton1 = 0;
 volatile int  resultButton2 = 0;
 
-int menu = 0;
-int menu2 = 0;
-
 int err = 0;
 
 //TwoWire bus = TwoWire(NRF_TWIM0, NRF_TWIS0, (IRQn_Type)3, 9, 10);
 //TwoWire Wire = TwoWire(9,10);
+
+// Menus
+#include "menu.h"
+
+// display settings 
+bool displayDate = true;
+bool displayHourBig = true;
+bool displayAirQuality = true;
+bool displaySteps = true;
+bool displayNotify = true;
+bool displayMenu = false;
+
+#define DEVICE_STATE_CLOCK    (0)
+#define DEVICE_STATE_MENU     (1)
+
+Menu menu;
+
+int currentDeviceState = DEVICE_STATE_CLOCK;
+int lastDeviceState = DEVICE_STATE_CLOCK;
 
 void setupI2C(void)
 {
@@ -261,6 +277,20 @@ void setupRTC(void)
   screenRefreshTimer.attachInterrupt(&timerHandler, 1000000);
 }
 
+void setupMenu(void)
+{
+  static MenuItem item1(String("Pedometer"), -1);
+  menu.addMenuItem(&item1);
+  static MenuItem item2(String("Air Quality"), -1);
+  menu.addMenuItem(&item2);
+  static MenuItem item3(String("Date"), -1);
+  menu.addMenuItem(&item3);
+  static MenuItem item4(String("Notify"), -1);
+  menu.addMenuItem(&item4);
+  static MenuItem item5(String("Set clock"), 0);
+  menu.addMenuItem(&item5);
+}
+
 void setupDisplay(void)
 {
   pinMode(SHARP_DISP, OUTPUT);
@@ -341,7 +371,7 @@ void setup()
   setupButtons();
   
   setupDisplay();
-  
+  setupMenu();
   
   //setupAccelerometer();
   //setupAccel();
@@ -352,6 +382,7 @@ void setup()
 }
 
 void refreshScreen(int orientation);
+void checkState();
 
 void loop() 
 {
@@ -367,7 +398,40 @@ void loop()
     bRefreshScreen = false;
     refreshScreen(1);
   }
+
+  checkState();
   
+}
+
+void drawMenu()
+{
+  display.clearDisplay();
+
+  display.setTextColor(BLACK);
+  display.setTextSize(2);
+  display.setCursor(0,0);
+  display.println("MENU");
+  display.setTextSize(1);
+  display.println(" ");
+
+  int selected = menu.getSelectedItemIndex();
+  
+  for(int i = 0; i < menu.getNumberOfItems(); i++)
+  {
+    if(i == selected)
+    {
+      display.print(">");
+    }
+    else
+    {
+      display.print(" ");
+    }
+
+    display.print(menu.m_menuItemsList[i]->getDescription());
+    display.print(" ");
+    display.println(menu.m_menuItemsList[i]->getValueDescription());
+    
+  }
 }
 
 void refreshScreen(int orientation = 1) 
@@ -375,73 +439,124 @@ void refreshScreen(int orientation = 1)
 
     display.setRotation(orientation);
     display.clearDisplay();
-    // text display tests
     
+    // text display test
+
     display.setTextColor(BLACK);
-
-    display.setTextSize(1);
-
-    //lsm.read();
-//    display.setCursor(0,0);
-//    display.print(dof.calcGyro(dof.ax), 2);
-//    display.print(" ");
-//    display.print(dof.calcGyro(dof.ay), 2);
-//    display.print(" ");
-//    display.print(dof.calcGyro(dof.az), 2);
-//    display.print(" ");
-//    display.print(err);
-
-    if(resultButton1 == STATE_LONG)
+    if(displayMenu)
     {
-      resultButton1 = STATE_NORMAL;
-      menu = menu ^ 1;
+      drawMenu();
     }
-    if(resultButton1 == STATE_SHORT)
+    else
     {
-      resultButton1 = STATE_NORMAL;
-      display.println("SHORT");
+
+      if(displayDate)
+      {
+        display.setTextSize(1);
+        display.setCursor(0,0);
+
+        display.print(rtc.date.day);      // day
+        display.print('/');
+        display.print(rtc.date.month);    // month
+        display.print('/');
+        display.print(rtc.date.year+2000); // year
+      }
+      
+      if(displayHourBig)
+      {
+        display.setTextSize(2);
+        display.setCursor(0,35);
+  
+        rtc.getDate();
+        rtc.getTime();
+        sprintf(hourText,"%02d:%02d:%02d\n", rtc.time.hour, rtc.time.minute, rtc.time.second);
+        
+        display.println(hourText);
+      }
+  
+      if(displayAirQuality)
+      {
+        display.setTextSize(1);
+        display.setCursor(25, 60);
+        display.println("IAQ: 50");
+      }
+      
+      if(displaySteps)
+      {
+        display.setTextSize(1);
+        display.setCursor(10, 75);
+        display.println("2346 steps");
+      }
     }
 
-    if(resultButton2 == STATE_LONG)
-    {
-      resultButton2 = STATE_NORMAL;
-      menu2 = menu2 ^ 1;
-    }
-    if(resultButton2 == STATE_SHORT)
-    {
-      resultButton2 = STATE_NORMAL;
-      display.println("SHORT2");
-    }
-    
 
-    if(menu)
-    {
-      display.println("MENU");
-    }
-    if(menu2)
-    {
-      display.println("MENU2");
-    }
-
-    display.setTextSize(2);
-    display.setCursor(0,35);
-
-    rtc.getDate();
-    rtc.getTime();
-    sprintf(hourText,"%02d:%02d:%02d\n", rtc.time.hour, rtc.time.minute, rtc.time.second);
-    
-    display.println(hourText);
-
-    display.setTextSize(1);
-
-    display.setCursor(25, 60);
-    display.println("IAQ: 50");
-    display.setCursor(10, 75);
-    display.println("2346 steps");
-    
     // Screen must be refreshed at least once per second
-
     display.refresh();
+}
+
+void updateSettings(void)
+{
+
+  displaySteps = (menu.m_menuItemsList[0]->getValue() == -1);
+  displayAirQuality = (menu.m_menuItemsList[1]->getValue() == -1);
+  displayDate = (menu.m_menuItemsList[2]->getValue() == -1);
+  displayNotify = (menu.m_menuItemsList[3]->getValue() == -1);
+
+}
+
+void checkState(void)
+{
+  
+      switch(currentDeviceState)
+      {
+        case DEVICE_STATE_CLOCK:
+
+          if(resultButton1 == STATE_LONG)
+          {
+            resultButton1 = STATE_NORMAL;
+            lastDeviceState = currentDeviceState;
+            currentDeviceState = DEVICE_STATE_MENU;
+            displayMenu = displayMenu ^ true;
+          }
+
+          break;
+
+          
+        case DEVICE_STATE_MENU:
+          
+          if(resultButton1 == STATE_LONG)
+          {
+            resultButton1 = STATE_NORMAL;
+            lastDeviceState = currentDeviceState;
+            currentDeviceState = DEVICE_STATE_CLOCK;
+            displayMenu = displayMenu ^ true;
+
+            updateSettings();
+          }
+
+          if(resultButton1 == STATE_SHORT)
+          {
+            resultButton1 = STATE_NORMAL;
+            menu.decrementSelectedItem();
+          }
+
+          if(resultButton2 == STATE_SHORT)
+          {
+            resultButton2 = STATE_NORMAL;
+            menu.incrementSelectedItem();
+          }
+
+          if(resultButton2 == STATE_LONG)
+          {
+            resultButton2 = STATE_NORMAL;
+            menu.action();
+          }
+
+          
+          break;
+      }
+  
+
 }
 
 void drawError(char* errorMsg)
@@ -462,7 +577,11 @@ void timerHandler(void)
 {
   bRefreshScreen = true;
   
-  screenRefreshTimer.attachInterrupt(&timerHandler, 1000000); 
+  // refresh screen faster in menu
+  if(currentDeviceState == DEVICE_STATE_CLOCK)
+    screenRefreshTimer.attachInterrupt(&timerHandler, 1000000);
+  else
+    screenRefreshTimer.attachInterrupt(&timerHandler, 500000);
 }
 
 void checkButton1(void)
@@ -549,6 +668,7 @@ void checkButton2(void)
       resultButton2 = STATE_NORMAL | resultButton2; // with no change in status, ensure no change in button status
   }
 }
+
 // forward received from Serial to BLESerial and vice versa
 void forward(void) 
 {
