@@ -41,6 +41,7 @@ BLESerial BLESerial(BLE_REQ, BLE_RDY, BLE_RST);
 
 // Set the size of the display here, e.g. 144x168!
 Adafruit_SharpMem display(SHARP_SCK, SHARP_MOSI, SHARP_SS, 96, 96);
+//Adafruit_SharpMem display(SHARP_SCK, SHARP_MOSI, SHARP_SS, 144, 168);
 // The currently-available SHARP Memory Display (144x168 pixels)
 // requires > 4K of microcontroller RAM; it WILL NOT WORK on Arduino Uno
 // or other <4K "classic" devices!  The original display (96x96 pixels)
@@ -74,6 +75,7 @@ char hourText[10];
 #include "Timer.h"
 
 TimerClass screenRefreshTimer(3, 0);
+// TimerClass pollutionTimer(3, 1);
 
 // I2C
 #include <Wire.h>
@@ -118,9 +120,6 @@ volatile int  resultButton2 = 0;
 
 int err = 0;
 
-//TwoWire bus = TwoWire(NRF_TWIM0, NRF_TWIS0, (IRQn_Type)3, 9, 10);
-//TwoWire Wire = TwoWire(9,10);
-
 // Menus
 #include "menu.h"
 
@@ -140,11 +139,49 @@ Menu menu;
 int currentDeviceState = DEVICE_STATE_CLOCK;
 int lastDeviceState = DEVICE_STATE_CLOCK;
 
-void setupI2C(void)
-{
-  //Wire.TwoWire(NRF_TWIM0, NRF_TWIS0, (IRQn_Type)3, PIN_WIRE_SDA, PIN_WIRE_SCL);
-  //Wire.begin();
-}
+// VIBE 
+
+#define PIN_VIBE 20
+#define VIBE_INTENSITY 100
+int stateVibe = 0;
+bool vibeOn = false;
+
+// BME 680 
+
+#include <Adafruit_Sensor.h>
+#include "Adafruit_BME680.h"
+
+//#define BME_SCK 13
+//#define BME_MISO 12
+//#define BME_MOSI 11
+//#define BME_CS 10
+
+#define BME_SCK 31
+#define BME_MISO 29
+#define BME_MOSI 30
+#define BME_CS 28
+
+#define SEALEVELPRESSURE_HPA (1013.25)
+
+
+float hum_weighting = 0.25; // so hum effect is 25% of the total air quality score
+float gas_weighting = 0.75; // so gas effect is 75% of the total air quality score
+
+float hum_score, gas_score;
+float gas_reference = 250000;
+float hum_reference = 40;
+int   getgasreference_count = 0;
+
+float air_quality_score = 0;
+float current_humidity = 0;
+float current_pressure = 0;
+float current_altitude = 0;
+float current_temperature = 0;
+
+//Adafruit_BME680 bme(BME_CS); // hardware SPI 
+Adafruit_BME680 bme(BME_CS, BME_MOSI, BME_MISO,  BME_SCK);
+
+volatile bool newPollutionRead = false;
 
 void setupButtons(void)
 {
@@ -153,6 +190,13 @@ void setupButtons(void)
 
   pinMode(PIN_BUTTON2, INPUT);
   attachInterrupt(digitalPinToInterrupt(PIN_BUTTON2), checkButton2, CHANGE);
+}
+
+void setupVibe(void)
+{
+  pinMode(PIN_VIBE, OUTPUT);
+  analogWrite(PIN_VIBE, 0);
+  
 }
 
 void setupAccel(void)
@@ -244,12 +288,20 @@ void setupAccelerometer(void)
 
 void setupPollutionSensor(void)
 {
+  if (!bme.begin()) {
+    return;
+  }
 
-}
+   // Set up oversampling and filter initialization
+  bme.setTemperatureOversampling(BME680_OS_8X);
+  bme.setHumidityOversampling(BME680_OS_2X);
+  bme.setPressureOversampling(BME680_OS_4X);
+  bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
+  bme.setGasHeater(320, 150); // 320*C for 150 ms
 
-void setupVibe(void)
-{
- 
+  GetGasReference();
+
+  // pollutionTimer.attachInterrupt(&pollutionTimerHandler, 1000000);
 }
 
 void setupRTC(void)
@@ -365,19 +417,18 @@ void setupDisplay(void)
 void setup() 
 {
 
+  
   setupBLE();
   //setupI2C();
   setupRTC();
   setupButtons();
-  
+  setupVibe();
+  setupPollutionSensor();
   setupDisplay();
   setupMenu();
   
   //setupAccelerometer();
   //setupAccel();
-  //setupPollutionSensor();
-
-  
 
 }
 
@@ -397,6 +448,40 @@ void loop()
   {
     bRefreshScreen = false;
     refreshScreen(1);
+  }
+
+  if(newPollutionRead == true)
+  {
+    newPollutionRead = false;
+    
+    bme.performReading();
+
+    current_temperature = bme.temperature;
+    current_altitude = bme.readAltitude(SEALEVELPRESSURE_HPA);
+    current_pressure = bme.pressure;
+    current_humidity = bme.readHumidity();
+    if (current_humidity >= 38 && current_humidity <= 42)
+      hum_score = 0.25*100; // Humidity +/-5% around optimum 
+    else
+    { //sub-optimal
+      if (current_humidity < 38) 
+        hum_score = 0.25/hum_reference*current_humidity*100;
+      else
+      {
+        hum_score = ((-0.25/(100-hum_reference)*current_humidity)+0.416666)*100;
+      }
+    }
+
+    //Calculate gas contribution to IAQ index
+    int gas_lower_limit = 5000;   // Bad air quality limit
+    int gas_upper_limit = 50000;  // Good air quality limit 
+    if (gas_reference > gas_upper_limit) gas_reference = gas_upper_limit; 
+    if (gas_reference < gas_lower_limit) gas_reference = gas_lower_limit;
+    gas_score = (0.75/(gas_upper_limit-gas_lower_limit)*gas_reference -(gas_lower_limit*(0.75/(gas_upper_limit-gas_lower_limit))))*100;
+    
+    //Combine results for the final IAQ index value (0-100% where 100% is good quality air)
+    air_quality_score = hum_score + gas_score;
+    
   }
 
   checkState();
@@ -478,7 +563,10 @@ void refreshScreen(int orientation = 1)
       {
         display.setTextSize(1);
         display.setCursor(25, 60);
-        display.println("IAQ: 50");
+        display.print("IAQ: ");
+        display.print(air_quality_score);
+        display.print("Hum: ");
+        display.println(hum_score);
       }
       
       if(displaySteps)
@@ -573,15 +661,54 @@ void drawError(char* errorMsg)
   
 }
 
+void vibeDoublePulse(void)
+{
+  switch(stateVibe)
+  {
+    case 0: 
+      analogWrite(PIN_VIBE, VIBE_INTENSITY);
+      stateVibe = 3;
+      break;
+    
+    case 1:
+      analogWrite(PIN_VIBE, 0);
+      stateVibe = 2;
+      break;
+
+    case 2:
+      analogWrite(PIN_VIBE, VIBE_INTENSITY);
+      stateVibe = 3;
+      break;
+
+    case 3:
+      stateVibe = 0;
+      vibeOn = false;
+      analogWrite(PIN_VIBE, 0); 
+      break;
+    default: 
+      analogWrite(PIN_VIBE, 0);
+  }
+
+  return;
+}
+
 void timerHandler(void)
 {
   bRefreshScreen = true;
+  if(vibeOn)
+    vibeDoublePulse();
   
   // refresh screen faster in menu
   if(currentDeviceState == DEVICE_STATE_CLOCK)
     screenRefreshTimer.attachInterrupt(&timerHandler, 1000000);
   else
     screenRefreshTimer.attachInterrupt(&timerHandler, 500000);
+}
+
+void pollutionTimerHandler(void)
+{
+  newPollutionRead = true;
+  // pollutionTimer.attachInterrupt(&pollutionTimerHandler, 1000000);
 }
 
 void checkButton1(void)
@@ -680,17 +807,28 @@ void forward(void)
   }
 }
 
+void notify(char* message)
+{
+  if(stateVibe == 0 && displayNotify && vibeOn == false)
+  {
+    vibeOn = true;
+  }
+  
+}
+
 // echo all received data back
 void loopback(void) 
 {
   if (BLESerial) 
   {
     char buffer[30];
+    char message[30];
     int k = 0;
+    bool writeBack = false;
     int byte;
     while ((byte = BLESerial.read()) > 0) 
     {
-      BLESerial.write(byte);
+      BLESerial.write(byte); 
       buffer[k] = byte;
       k++;
     }
@@ -746,6 +884,75 @@ void loopback(void)
         {
           rtc.setMonth(syncMonth);
         }
+      }
+      if(buffer[0] == '!')
+      {
+        if(displayNotify)
+          notify(buffer);
+      }
+      if(strstr(buffer, "readBME") != NULL)
+      {
+        newPollutionRead = true;
+      }
+      if(strstr(buffer, "?IAQ") != NULL)
+      {
+        sprintf(message, "\nIAQ: %f", air_quality_score);
+        writeBack = true;
+      }
+      
+      if(strstr(buffer, "?P") != NULL)
+      {
+        sprintf(message, "\nP: %f hPa", current_pressure/100.0);
+        writeBack = true;
+      }
+      if(strstr(buffer, "?T") != NULL)
+      {
+        sprintf(message, "\nT: %f *C", current_temperature );
+        writeBack = true;
+      }
+      if(strstr(buffer, "?H") != NULL)
+      {
+        sprintf(message, "\nH: %f", current_humidity);
+        writeBack = true;
+      }
+      if(strstr(buffer, "?S") != NULL)
+      {
+        return;
+      }
+      if(strstr(buffer, "?BMEDUMP") != NULL)
+      {
+        return;
+      }
+      if(strstr(buffer, "?CONFIG") != NULL)
+      {
+        return;
+      }
+      if(strstr(buffer, "*DATE") != NULL)
+      {
+        return;
+      }
+      if(strstr(buffer, "*BME") != NULL)
+      {
+        return;
+      }
+      if(strstr(buffer, "*STEP") != NULL)
+      {
+        return;
+      }
+      if(strstr(buffer, "*NOTIFY") != NULL)
+      {
+        return;
+      }
+
+      if(writeBack)
+      {
+        k = 0;
+        while(message[k])
+        {
+          BLESerial.write(message[k]);
+          k++;
+        }
+        writeBack = false;
       }
   }
 }
@@ -893,4 +1100,26 @@ void testdrawchar(void)
     display.write(i);
   }
   display.refresh();
+}
+
+void GetGasReference(){
+  // Now run the sensor for a burn-in period, then use combination of relative humidity and gas resistance to estimate indoor air quality as a percentage.
+  Serial.println("Getting a new gas reference value");
+  int readings = 10;
+  for (int i = 0; i <= readings; i++){ // read gas for 10 x 0.150mS = 1.5secs
+    gas_reference += bme.readGas();
+  }
+  gas_reference = gas_reference / readings;
+}
+
+String CalculateIAQ(float score){
+  String IAQ_text = "Air quality is ";
+  score = (100-score)*5;
+  if      (score >= 301)                  IAQ_text += "Hazardous";
+  else if (score >= 201 && score <= 300 ) IAQ_text += "Very Unhealthy";
+  else if (score >= 176 && score <= 200 ) IAQ_text += "Unhealthy";
+  else if (score >= 151 && score <= 175 ) IAQ_text += "Unhealthy for Sensitive Groups";
+  else if (score >=  51 && score <= 150 ) IAQ_text += "Moderate";
+  else if (score >=  00 && score <=  50 ) IAQ_text += "Good";
+  return IAQ_text;
 }
