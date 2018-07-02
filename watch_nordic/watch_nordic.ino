@@ -70,6 +70,7 @@ int year;
 
 // text displayed
 char hourText[10];
+char notificationText[30];
 
 // timers 
 #include "Timer.h"
@@ -130,9 +131,11 @@ bool displayAirQuality = true;
 bool displaySteps = true;
 bool displayNotify = true;
 bool displayMenu = false;
+bool displayApp = false;
 
 #define DEVICE_STATE_CLOCK    (0)
 #define DEVICE_STATE_MENU     (1)
+#define DEVICE_STATE_APP      (2)
 
 Menu menu;
 
@@ -173,15 +176,29 @@ float hum_reference = 40;
 int   getgasreference_count = 0;
 
 float air_quality_score = 0;
+float current_IAQ = 0; // computed as in EPA 
 float current_humidity = 0;
 float current_pressure = 0;
 float current_altitude = 0;
 float current_temperature = 0;
 
+String current_IAQ_rating = "\n";
+
+// seconds for BME refresh 
+bool defaultTimeout = true;
+int timeoutBME = 60; 
+int currentTimeBME = 0;
+
 //Adafruit_BME680 bme(BME_CS); // hardware SPI 
 Adafruit_BME680 bme(BME_CS, BME_MOSI, BME_MISO,  BME_SCK);
 
 volatile bool newPollutionRead = false;
+
+int current_steps = 2534;
+
+bool notifyTextOn = false;
+int currentTimeNotify = 0;
+int timeoutNotify = 5;
 
 void setupButtons(void)
 {
@@ -331,16 +348,18 @@ void setupRTC(void)
 
 void setupMenu(void)
 {
-  static MenuItem item1(String("Pedometer"), -1);
+  static MenuItem item1(String("Ped."), -1);
   menu.addMenuItem(&item1);
-  static MenuItem item2(String("Air Quality"), -1);
+  static MenuItem item2(String("Air Q."), -1);
   menu.addMenuItem(&item2);
   static MenuItem item3(String("Date"), -1);
   menu.addMenuItem(&item3);
   static MenuItem item4(String("Notify"), -1);
   menu.addMenuItem(&item4);
-  static MenuItem item5(String("Set clock"), 0);
+  static MenuItem item5(String("BME Auto"), -1);
   menu.addMenuItem(&item5);
+  static MenuItem item6(String("Set clock"), 0);
+  menu.addMenuItem(&item6);
 }
 
 void setupDisplay(void)
@@ -415,9 +434,7 @@ void setupDisplay(void)
 }
 
 void setup() 
-{
-
-  
+{  
   setupBLE();
   //setupI2C();
   setupRTC();
@@ -426,10 +443,6 @@ void setup()
   setupPollutionSensor();
   setupDisplay();
   setupMenu();
-  
-  //setupAccelerometer();
-  //setupAccel();
-
 }
 
 void refreshScreen(int orientation);
@@ -481,6 +494,9 @@ void loop()
     
     //Combine results for the final IAQ index value (0-100% where 100% is good quality air)
     air_quality_score = hum_score + gas_score;
+
+    current_IAQ = fCalculateIAQ(air_quality_score);
+    current_IAQ_rating = CalculateIAQ(current_IAQ);
     
   }
 
@@ -494,7 +510,7 @@ void drawMenu()
 
   display.setTextColor(BLACK);
   display.setTextSize(2);
-  display.setCursor(0,0);
+  display.setCursor(10,10);
   display.println("MENU");
   display.setTextSize(1);
   display.println(" ");
@@ -505,11 +521,11 @@ void drawMenu()
   {
     if(i == selected)
     {
-      display.print(">");
+      display.print("  >");
     }
     else
     {
-      display.print(" ");
+      display.print("   ");
     }
 
     display.print(menu.m_menuItemsList[i]->getDescription());
@@ -518,6 +534,86 @@ void drawMenu()
     
   }
 }
+
+int APP_LEFT_ALIGN = 10;
+int APP_UP_ALIGN = 20;
+int APP_ALIGN_STEP = 10;
+
+void drawApp()
+{
+  display.clearDisplay();
+
+  display.setTextColor(BLACK);
+  display.setTextSize(1);
+  display.setCursor(10,10);
+  display.println("POLLUTION APP");
+  display.setTextSize(1);
+  display.println(" ");
+
+  char appText[20];
+
+  int APP_ALIGN = APP_UP_ALIGN;
+  // pressure
+  display.setCursor(APP_LEFT_ALIGN, APP_ALIGN);
+  APP_ALIGN += APP_ALIGN_STEP;
+//  display.print("P: ");
+//  display.print("hPa");
+  sprintf(appText,"P: %.2f hPa",current_pressure/100.0);
+  display.println(appText);
+  
+  // temperature
+  display.setCursor(APP_LEFT_ALIGN, APP_ALIGN);
+  APP_ALIGN += APP_ALIGN_STEP;
+//  display.print("T: ");
+//  display.print("*C");
+  sprintf(appText,"T: %.2f *C",current_temperature);
+  display.println(appText);
+  
+  // humidity 
+  display.setCursor(APP_LEFT_ALIGN, APP_ALIGN);
+  APP_ALIGN += APP_ALIGN_STEP;
+//  display.print("H: ");
+//  display.print('%');
+  sprintf(appText,"H: %.2f %s",current_humidity, "%");
+  display.println(appText);
+
+  // altitude
+  display.setCursor(APP_LEFT_ALIGN, APP_ALIGN);
+  APP_ALIGN += APP_ALIGN_STEP;
+//  display.print("H: ");
+//  display.print('%');
+  sprintf(appText,"Alt: %.2f m",current_altitude);
+  display.println(appText);
+  
+  // IAQ Raw
+  display.setCursor(APP_LEFT_ALIGN, APP_ALIGN);
+  APP_ALIGN += APP_ALIGN_STEP;
+//  display.print("IAQ (raw): ");
+  sprintf(appText,"IAQ raw: %.2f",air_quality_score);
+  display.println(appText);
+ 
+  // IAQ computed
+  display.setCursor(APP_LEFT_ALIGN, APP_ALIGN);
+  APP_ALIGN += APP_ALIGN_STEP;
+//  display.print("IAQ: ");
+  sprintf(appText,"IAQ: %.2f",current_IAQ);
+  display.println(appText);
+  
+  
+  // IAQ EPA
+  display.setCursor(APP_LEFT_ALIGN, APP_ALIGN);
+  APP_ALIGN += APP_ALIGN_STEP;
+  display.print(current_IAQ_rating);
+}
+
+
+int16_t  x, y;
+uint16_t w, h;
+
+char dateText[30];
+char iaqText[20];
+char humText[20];
+char stepsText[20];
 
 void refreshScreen(int orientation = 1) 
 {
@@ -528,23 +624,30 @@ void refreshScreen(int orientation = 1)
     // text display test
 
     display.setTextColor(BLACK);
-    if(displayMenu)
+    if(currentDeviceState == DEVICE_STATE_MENU)
     {
       drawMenu();
     }
-    else
+    else if(currentDeviceState == DEVICE_STATE_APP)
+    {
+      drawApp();
+    }
+    else if(currentDeviceState == DEVICE_STATE_CLOCK)
     {
 
       if(displayDate)
       {
         display.setTextSize(1);
-        display.setCursor(0,0);
+        sprintf(dateText, "%d/%d/%d", rtc.date.day, rtc.date.month, rtc.date.year+2000);
+        display.setCursor(getHorizPos(dateText),10);
+        display.print(dateText);
 
-        display.print(rtc.date.day);      // day
-        display.print('/');
-        display.print(rtc.date.month);    // month
-        display.print('/');
-        display.print(rtc.date.year+2000); // year
+      }
+      if(displayNotify && notifyTextOn)
+      {
+        display.setTextSize(1);
+        display.setCursor(getHorizPos(notificationText), 25);
+        display.println(notificationText);
       }
       
       if(displayHourBig)
@@ -562,18 +665,21 @@ void refreshScreen(int orientation = 1)
       if(displayAirQuality)
       {
         display.setTextSize(1);
-        display.setCursor(25, 60);
-        display.print("IAQ: ");
-        display.print(air_quality_score);
-        display.print("Hum: ");
-        display.println(hum_score);
+        sprintf(iaqText, "IAQ: %.2f", current_IAQ);
+        display.setCursor(getHorizPos(iaqText), 55);
+        display.print(iaqText);
+
+        sprintf(humText, "Hum: %.2f %s", hum_score, "%");
+        display.setCursor(getHorizPos(humText), 65);
+        display.print(humText);
       }
       
       if(displaySteps)
       {
         display.setTextSize(1);
-        display.setCursor(10, 75);
-        display.println("2346 steps");
+        sprintf(stepsText, "Steps: %d", current_steps);
+        display.setCursor(getHorizPos(stepsText), 75);
+        display.print(stepsText);
       }
     }
 
@@ -584,12 +690,11 @@ void refreshScreen(int orientation = 1)
 
 void updateSettings(void)
 {
-
   displaySteps = (menu.m_menuItemsList[0]->getValue() == -1);
   displayAirQuality = (menu.m_menuItemsList[1]->getValue() == -1);
   displayDate = (menu.m_menuItemsList[2]->getValue() == -1);
   displayNotify = (menu.m_menuItemsList[3]->getValue() == -1);
-
+  defaultTimeout = (menu.m_menuItemsList[4]->getValue() == -1);
 }
 
 void checkState(void)
@@ -599,12 +704,20 @@ void checkState(void)
       {
         case DEVICE_STATE_CLOCK:
 
+          // entering menu
           if(resultButton1 == STATE_LONG)
           {
             resultButton1 = STATE_NORMAL;
             lastDeviceState = currentDeviceState;
             currentDeviceState = DEVICE_STATE_MENU;
-            displayMenu = displayMenu ^ true;
+          }
+          
+          // entering APP space
+          if(resultButton2 == STATE_LONG)
+          {
+            resultButton2 = STATE_NORMAL;
+            lastDeviceState = currentDeviceState;
+            currentDeviceState = DEVICE_STATE_APP;
           }
 
           break;
@@ -617,7 +730,6 @@ void checkState(void)
             resultButton1 = STATE_NORMAL;
             lastDeviceState = currentDeviceState;
             currentDeviceState = DEVICE_STATE_CLOCK;
-            displayMenu = displayMenu ^ true;
 
             updateSettings();
           }
@@ -641,6 +753,16 @@ void checkState(void)
           }
 
           
+          break;
+
+        case DEVICE_STATE_APP:
+          if(resultButton2 == STATE_LONG)
+          {
+            resultButton2 = STATE_NORMAL;
+            lastDeviceState = currentDeviceState;
+            currentDeviceState = DEVICE_STATE_CLOCK;
+          }
+
           break;
       }
   
@@ -697,6 +819,27 @@ void timerHandler(void)
   bRefreshScreen = true;
   if(vibeOn)
     vibeDoublePulse();
+
+  if(displayAirQuality)
+  {
+    // count towards timeout
+    currentTimeBME++;
+    if(currentTimeBME > timeoutBME)
+    {
+      currentTimeBME = 0;
+      newPollutionRead = true;
+    }
+  }
+
+  if(displayNotify && notifyTextOn)
+  {
+    currentTimeNotify++;
+    if(currentTimeNotify > timeoutNotify)
+    {
+      currentTimeNotify = 0;
+      notifyTextOn = false;
+    }
+  }
   
   // refresh screen faster in menu
   if(currentDeviceState == DEVICE_STATE_CLOCK)
@@ -813,6 +956,12 @@ void notify(char* message)
   {
     vibeOn = true;
   }
+  if(displayNotify)
+  {
+    strcpy(notificationText, message+1);
+    notifyTextOn = true;
+    
+  }
   
 }
 
@@ -896,28 +1045,35 @@ void loopback(void)
       }
       if(strstr(buffer, "?IAQ") != NULL)
       {
-        sprintf(message, "\nIAQ: %f", air_quality_score);
+        sprintf(message, "\nIAQ: %.2f", air_quality_score);
+        writeBack = true;
+      }
+
+      if(strstr(buffer, "?IAQc") != NULL)
+      {
+        sprintf(message, "\nIAQ: %.2f", current_IAQ);
         writeBack = true;
       }
       
       if(strstr(buffer, "?P") != NULL)
       {
-        sprintf(message, "\nP: %f hPa", current_pressure/100.0);
+        sprintf(message, "\nP: %.2f hPa", current_pressure/100.0);
         writeBack = true;
       }
       if(strstr(buffer, "?T") != NULL)
       {
-        sprintf(message, "\nT: %f *C", current_temperature );
+        sprintf(message, "\nT: %.2f *C", current_temperature );
         writeBack = true;
       }
       if(strstr(buffer, "?H") != NULL)
       {
-        sprintf(message, "\nH: %f", current_humidity);
+        sprintf(message, "\nH: %.2f", current_humidity);
         writeBack = true;
       }
       if(strstr(buffer, "?S") != NULL)
       {
-        return;
+        sprintf(message, "\nS: %d", current_steps);
+        writeBack = true;
       }
       if(strstr(buffer, "?BMEDUMP") != NULL)
       {
@@ -925,23 +1081,43 @@ void loopback(void)
       }
       if(strstr(buffer, "?CONFIG") != NULL)
       {
-        return;
+        sprintf(message, "\n%d%d%d%d%d", menu.m_menuItemsList[0]->getValue(), menu.m_menuItemsList[1]->getValue(), 
+                menu.m_menuItemsList[2]->getValue(), menu.m_menuItemsList[3]->getValue(), menu.m_menuItemsList[4]->getValue());
+        writeBack = true;
       }
+
+      //not tested yet
       if(strstr(buffer, "*DATE") != NULL)
       {
-        return;
+        if(buffer[5] == '0')
+          menu.m_menuItemsList[2]->setValue(-2);
+        if(buffer[5] == '1')
+          menu.m_menuItemsList[2]->setValue(-1);
+        updateSettings();
       }
       if(strstr(buffer, "*BME") != NULL)
       {
-        return;
+        if(buffer[4] == '0')
+          menu.m_menuItemsList[1]->setValue(-2);
+        if(buffer[4] == '1')
+          menu.m_menuItemsList[1]->setValue(-1);
+        updateSettings();
       }
       if(strstr(buffer, "*STEP") != NULL)
       {
-        return;
+        if(buffer[5] == '0')
+          menu.m_menuItemsList[0]->setValue(-2);
+        if(buffer[5] == '1')
+          menu.m_menuItemsList[0]->setValue(-1);
+        updateSettings();
       }
       if(strstr(buffer, "*NOTIFY") != NULL)
       {
-        return;
+        if(buffer[7] == '0')
+          menu.m_menuItemsList[3]->setValue(-2);
+        if(buffer[7] == '1')
+          menu.m_menuItemsList[3]->setValue(-1);
+        updateSettings();
       }
 
       if(writeBack)
@@ -1112,9 +1288,14 @@ void GetGasReference(){
   gas_reference = gas_reference / readings;
 }
 
-String CalculateIAQ(float score){
-  String IAQ_text = "Air quality is ";
-  score = (100-score)*5;
+float fCalculateIAQ(float score)
+{
+  return (100-score)*5;
+}
+
+String CalculateIAQ(float score)
+{
+  String IAQ_text = " ";
   if      (score >= 301)                  IAQ_text += "Hazardous";
   else if (score >= 201 && score <= 300 ) IAQ_text += "Very Unhealthy";
   else if (score >= 176 && score <= 200 ) IAQ_text += "Unhealthy";
@@ -1123,3 +1304,14 @@ String CalculateIAQ(float score){
   else if (score >=  00 && score <=  50 ) IAQ_text += "Good";
   return IAQ_text;
 }
+
+int getHorizPos(char* text)
+{
+  display.getTextBounds(text, 0, 0, &x, &y, &w, &h);
+  
+  int x = 48 - w/2;
+  if(x >= 0)
+    return x;
+  return 0;
+}
+
