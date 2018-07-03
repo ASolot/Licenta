@@ -720,6 +720,17 @@ void checkState(void)
             currentDeviceState = DEVICE_STATE_APP;
           }
 
+          // do nothing :) 
+          if(resultButton1 == STATE_SHORT)
+          {
+            resultButton1 = STATE_NORMAL;
+          }
+
+          if(resultButton2 == STATE_SHORT)
+          {
+            resultButton2 = STATE_NORMAL;
+          }
+
           break;
 
           
@@ -763,7 +774,24 @@ void checkState(void)
             currentDeviceState = DEVICE_STATE_CLOCK;
           }
 
-          break;
+
+          // do nothing :) 
+          if(resultButton1 == STATE_LONG)
+          {
+            resultButton1 = STATE_NORMAL;
+          }
+          
+          if(resultButton1 == STATE_SHORT)
+          {
+            resultButton1 = STATE_NORMAL;
+          }
+
+          if(resultButton2 == STATE_SHORT)
+          {
+            resultButton2 = STATE_NORMAL;
+          }
+
+         break;
       }
   
 
